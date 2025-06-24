@@ -182,7 +182,7 @@ def _generar_tabla_vertical_entidad(entity_level, entity_name, dias_activos_tota
              results_by_period[p_label]=_calcular_metricas_agregadas_y_estabilidad(df_period_subset,p_days, log_func)
              period_labels.append(p_label)
              period_details_local.append((start_date_p, max_entity_dt, p_label)) 
-    elif period_type == "Weeks" or period_type == "Months":
+    elif period_type in ["Weeks", "Months", "Biweekly"]:
          log_func(f"  Calculando métricas para períodos {period_type}...");
          period_details_local = periods 
          for start_dt, end_dt, label_from_orchestrator in period_details_local:
@@ -436,6 +436,9 @@ def _generar_tabla_vertical_entidad(entity_level, entity_name, dias_activos_tota
     elif period_type == "Weeks":
          log_func("  * **Columnas (Semana actual, Xª semana anterior):** Muestran las métricas acumuladas (sumas) o promedios/tasas para cada semana definida (Actual a más antigua, de izq. a der.), específicas para esta entidad.")
          log_func("  * **Valor en paréntesis (...) en columnas Semanales:** Compara el valor de esa semana con la semana *inmediatamente anterior* mostrada (la columna a su derecha). Muestra la variación porcentual semana a semana (WoW). Una flecha 🔺 indica mejora, 🔻 indica empeoramiento respecto a la semana anterior.")
+    elif period_type == "Biweekly":
+         log_func("  * **Columnas (Quincena actual, Xª quincena anterior):** Muestran las métricas acumuladas o promedios para cada quincena definida, específicas para esta entidad.")
+         log_func("  * **Valor en paréntesis (...) en columnas Quincenales:** Compara el valor de esa quincena con la inmediatamente anterior. Indica la variación quincenal.")
     elif period_type == "Months":
          log_func("  * **Columnas (Mes Actual, Mes Ant. 1):** Muestran las métricas acumuladas (sumas) o promedios/tasas para los 2 últimos meses calendario completos detectados, específicas para esta entidad.")
          log_func("  * **Valor en paréntesis (...) en 'Mes Actual':** Compara el valor del Mes Actual con el Mes Anterior mostrado. Muestra la variación porcentual mes a mes (MoM). Una flecha 🔺 indica mejora, 🔻 indica empeoramiento respecto al mes anterior.")
@@ -547,7 +550,8 @@ def _generar_tabla_embudo_bitacora(df_daily_agg, bitacora_periods_list, log_func
 
 
     log_func("\n\n============================================================")
-    title_comp = "Semanal" if period_type == "Weeks" else "Mensual"
+    title_map = {"Weeks": "Semanal", "Months": "Mensual", "Biweekly": "Quincenal"}
+    title_comp = title_map.get(period_type, period_type)
     log_func(f"===== Análisis de Embudo - Comparativa {title_comp} =====")
     log_func("============================================================")
 
@@ -659,8 +663,17 @@ def _generar_tabla_embudo_bitacora(df_daily_agg, bitacora_periods_list, log_func
     
     log_func("\n  **Detalle de Métricas (Embudo de Bitácora):**");
     log_func(f"  * **Paso del Embudo:** Etapa del proceso de conversión (datos agregados de cuenta completa).")
-    log_func(f"  * **Columnas ({'Semana actual, Xª semana anterior' if period_type == 'Weeks' else 'Mes actual, Xº mes anterior'}):** Muestran el valor *Real* acumulado para esa etapa en el período indicado.")
-    log_func(f"  * **% Paso ({'Semana/Mes'}):** Es la tasa de conversión de esta etapa con respecto a la etapa *anterior en el embudo* (ej. Clics/Impresiones) DENTRO DEL MISMO PERÍODO. La Flecha (🔺/🔻) indica si este porcentaje de paso es mayor o menor que el 100%. '-' para el primer paso.");
+    if period_type == 'Weeks':
+        col_label = 'Semana actual, Xª semana anterior'
+        pct_label = 'Semana'
+    elif period_type == 'Biweekly':
+        col_label = 'Quincena actual, Xª quincena anterior'
+        pct_label = 'Quincena'
+    else:
+        col_label = 'Mes actual, Xº mes anterior'
+        pct_label = 'Mes'
+    log_func(f"  * **Columnas ({col_label}):** Muestran el valor *Real* acumulado para esa etapa en el período indicado.")
+    log_func(f"  * **% Paso ({pct_label}):** Es la tasa de conversión de esta etapa con respecto a la etapa *anterior en el embudo* (ej. Clics/Impresiones) DENTRO DEL MISMO PERÍODO. La Flecha (🔺/🔻) indica si este porcentaje de paso es mayor o menor que el 100%. '-' para el primer paso.");
     log_func("  ---")
     try:
         locale.setlocale(locale.LC_TIME, original_locale)
@@ -1159,7 +1172,7 @@ def _generar_tabla_bitacora_top_entities(
         period_metrics[label] = df_g
 
     if period_metrics[period_labels[0]].empty:
-        log_func(f"\nNo hay datos para la semana actual. Top {entity_label} Bitácora omitido.")
+        log_func(f"\nNo hay datos para el primer período. Top {entity_label} Bitácora omitido.")
         return
 
     any_table = False
@@ -1371,10 +1384,12 @@ def _generar_tabla_performance_publico(df_daily_agg, log_func, detected_currency
 def _generar_tabla_tendencia_ratios(df_daily_total, bitacora_periods_list, log_func, period_type="Weeks"):
     """Genera tabla de tendencia de ratios por periodo."""
 
-    header_label = 'Semana' if period_type == 'Weeks' else 'Mes'
+    label_map = {'Weeks': 'Semana', 'Months': 'Mes', 'Biweekly': 'Quincena'}
+    header_label = label_map.get(period_type, 'Periodo')
 
+    title_map = {'Weeks': 'Semanal', 'Months': 'Mensual', 'Biweekly': 'Quincenal'}
     log_func("\n\n============================================================")
-    log_func(f"===== Tendencia Ratios ({'Semanal' if period_type == 'Weeks' else 'Mensual'}) =====")
+    log_func(f"===== Tendencia Ratios ({title_map.get(period_type, period_type)}) =====")
     log_func("============================================================")
 
     if df_daily_total is None or df_daily_total.empty or 'date' not in df_daily_total.columns:
@@ -1448,7 +1463,8 @@ def _generar_tabla_bitacora_entidad(entity_level, entity_name, df_daily_entity,
     
     header_label = entity_level.capitalize()
     log_func(f"\n\n--------------------------------------------------------------------------------")
-    log_func(f" {header_label}: {entity_name} - Comparativa {'Semanal' if period_type == 'Weeks' else 'Mensual'}")
+    title_map = {'Weeks': 'Semanal', 'Months': 'Mensual', 'Biweekly': 'Quincenal'}
+    log_func(f" {header_label}: {entity_name} - Comparativa {title_map.get(period_type, period_type)}")
     log_func(f"--------------------------------------------------------------------------------")
 
     if df_daily_entity is None or df_daily_entity.empty or 'date' not in df_daily_entity.columns:
@@ -1569,8 +1585,17 @@ def _generar_tabla_bitacora_entidad(entity_level, entity_name, df_daily_entity,
                                   numeric_cols_for_alignment=numeric_cols_for_alignment)
 
     log_func("\n  **Nota aclaratoria:**")
-    log_func("  * **Semana actual / Mes actual:** Corresponde al periodo más reciente analizado (semana 0 o mes 0).")
-    log_func("  * **Xª semana anterior / Xº mes anterior:** Es la semana/mes inmediatamente previa (semana/mes –X).")
+    if period_type == 'Weeks':
+        current_label = 'Semana actual'
+        prev_label = 'Xª semana anterior'
+    elif period_type == 'Biweekly':
+        current_label = 'Quincena actual'
+        prev_label = 'Xª quincena anterior'
+    else:
+        current_label = 'Mes actual'
+        prev_label = 'Xº mes anterior'
+    log_func(f"  * **{current_label}:** Corresponde al periodo más reciente analizado (0).")
+    log_func(f"  * **{prev_label}:** Es el periodo inmediatamente previo (-X).")
     log_func("  * El análisis comparativo (valores en paréntesis con 🔺/🔻) se realiza siempre contra el período inmediatamente anterior mostrado en la tabla (columna a la derecha).")
     log_func("\n  **Detalle de Cálculo de Métricas Clave (Bitácora):**")
     log_func("  * **Inversión:** Suma del `Importe gastado` para el período.")

@@ -286,7 +286,7 @@ def procesar_reporte_bitacora(input_files, output_dir, output_filename, status_q
             max_date_overall = df_daily_agg_full['date'].max().date()
             log(f"  Rango total de datos agregados (considerando filtros): {min_date_overall.strftime('%d/%m/%Y')} a {max_date_overall.strftime('%d/%m/%Y')}")
 
-            bitacora_periods_list = [] 
+            bitacora_periods_list = []
 
             if bitacora_comparison_type == "Weekly":
                 current_week_start_obj = None
@@ -400,6 +400,113 @@ def procesar_reporte_bitacora(input_files, output_dir, output_filename, status_q
                         label_base_log = f"Semana {i}" if i > 0 else "Semana actual"
                         log(f"    -> Período semanal ({label_base_log} base {p_start_dt_calc.strftime('%d/%m/%y')}) omitido (completamente fuera del rango de datos).")
                 
+            elif bitacora_comparison_type == "Biweekly":
+                unique_dates_for_range = sorted(df_daily_agg_full['date'].dt.date.unique())
+                if len(unique_dates_for_range) < 30:
+                    log("No hay suficientes datos (menos de 30 días) para Bitácora Quincenal.", importante=True)
+                    status_queue.put("---ERROR---"); return
+
+                current_period_start_obj = None
+                current_period_end_obj = None
+
+                if current_week_start_input_str and current_week_end_input_str and date_parse:
+                    try:
+                        parsed_start = date_parse(current_week_start_input_str, dayfirst=True).date()
+                        parsed_end = date_parse(current_week_end_input_str, dayfirst=True).date()
+                        if (parsed_end - parsed_start).days == 14:
+                            current_period_start_obj = parsed_start
+                            current_period_end_obj = parsed_end
+                            log(f"  Bitácora (Quincenal): Período de referencia válido recibido de GUI: {current_period_start_obj.strftime('%d/%m/%Y')} a {current_period_end_obj.strftime('%d/%m/%Y')}")
+                        else:
+                            log(f"  Advertencia: Rango de GUI ({current_week_start_input_str} - {current_week_end_input_str}) no es de 15 días. Usando fallback.")
+                            current_period_start_obj = None
+                            current_period_end_obj = None
+                    except Exception as e_ref_parse:
+                        log(f"  Advertencia: Fechas de referencia de GUI inválidas ({e_ref_parse}). Usando fallback.")
+                        current_period_start_obj = None
+                        current_period_end_obj = None
+
+                if not current_period_start_obj or not current_period_end_obj:
+                    log("  Bitácora (Quincenal): Buscando período de referencia automáticamente (última quincena con datos).")
+                    unique_dates_in_data = sorted(df_daily_agg_full['date'].dt.date.unique())
+                    if unique_dates_in_data:
+                        max_date_in_filtered_data = max(unique_dates_in_data)
+                        temp_start_candidate = max_date_in_filtered_data - timedelta(days=14)
+                        found_suitable_period = False
+                        for _ in range(min(26, (max_date_in_filtered_data - min_date_overall).days // 15 + 2)):
+                            temp_end_candidate = temp_start_candidate + timedelta(days=14)
+
+                            period_actual_start_for_check = max(temp_start_candidate, min_date_overall)
+                            period_actual_end_for_check = min(temp_end_candidate, max_date_overall)
+
+                            if period_actual_start_for_check > period_actual_end_for_check:
+                                temp_start_candidate -= timedelta(days=15)
+                                continue
+
+                            has_data_in_this_period_segment = False
+                            current_check_day = period_actual_start_for_check
+                            while current_check_day <= period_actual_end_for_check:
+                                if current_check_day in unique_dates_in_data:
+                                    has_data_in_this_period_segment = True
+                                    break
+                                current_check_day += timedelta(days=1)
+
+                            if has_data_in_this_period_segment:
+                                current_period_start_obj = temp_start_candidate
+                                current_period_end_obj = temp_end_candidate
+                                log(f"    -> Período de referencia automática (basado en datos más recientes): {current_period_start_obj.strftime('%d/%m/%Y')} a {current_period_end_obj.strftime('%d/%m/%Y')}")
+                                found_suitable_period = True
+                                break
+
+                            temp_start_candidate -= timedelta(days=15)
+
+                        if not found_suitable_period:
+                            log("    -> No se encontraron quincenas con datos en el fallback. Usando inicio de datos.")
+                            current_period_start_obj = min_date_overall
+                            current_period_end_obj = min(current_period_start_obj + timedelta(days=14), max_date_overall)
+
+                    if not current_period_start_obj:
+                        log("!!! Error: No hay fechas únicas en los datos agregados. No se puede determinar quincena de referencia. !!!", importante=True)
+                        status_queue.put("---ERROR---"); return
+
+                if current_period_end_obj < min_date_overall:
+                    current_period_start_obj = min_date_overall
+                    current_period_end_obj = min(current_period_start_obj + timedelta(days=14), max_date_overall)
+                    log(f"  Ajuste Fuerte: Período de referencia ajustado a inicio de datos: {current_period_start_obj.strftime('%d/%m/%Y')} a {current_period_end_obj.strftime('%d/%m/%Y')}")
+                if current_period_start_obj > max_date_overall:
+                    current_period_end_obj = max_date_overall
+                    current_period_start_obj = max(current_period_end_obj - timedelta(days=14), min_date_overall)
+                    log(f"  Ajuste Fuerte: Período de referencia ajustado a fin de datos: {current_period_start_obj.strftime('%d/%m/%Y')} a {current_period_end_obj.strftime('%d/%m/%Y')}")
+
+                log(f"  Bitácora (Quincenal): Período efectivo para 'Quincena actual' (después de todos los ajustes): {current_period_start_obj.strftime('%d/%m/%Y')} a {current_period_end_obj.strftime('%d/%m/%Y')}")
+
+                for i in range(3):
+                    p_start_dt_calc = current_period_start_obj - timedelta(days=15*i)
+                    p_end_dt_calc = current_period_end_obj - timedelta(days=15*i)
+
+                    actual_p_start_for_data = max(p_start_dt_calc, min_date_overall)
+                    actual_p_end_for_data = min(p_end_dt_calc, max_date_overall)
+
+                    if actual_p_start_for_data <= actual_p_end_for_data:
+                        if i == 0:
+                            label_base = "Quincena actual"
+                        else:
+                            label_base = f"{i}ª quincena anterior"
+
+                        date_range_str_label = f"({p_start_dt_calc.strftime('%d %b').lower()} – {p_end_dt_calc.strftime('%d %b %Y').lower()})"
+                        label = f"{label_base} {date_range_str_label}"
+
+                        bitacora_periods_list.append(
+                            (
+                                datetime.combine(actual_p_start_for_data, datetime.min.time()),
+                                datetime.combine(actual_p_end_for_data, datetime.max.time()),
+                                label,
+                            )
+                        )
+                    else:
+                        label_base_log = f"Quincena {i}" if i > 0 else "Quincena actual"
+                        log(f"    -> Período quincenal ({label_base_log} base {p_start_dt_calc.strftime('%d/%m/%y')}) omitido (completamente fuera del rango de datos).")
+
             elif bitacora_comparison_type == "Monthly":
                 if not relativedelta or not date_parse:
                     log("!!! Error: 'python-dateutil' no disponible. No se puede generar Bitácora Mensual. !!!", importante=True)
@@ -471,7 +578,9 @@ def procesar_reporte_bitacora(input_files, output_dir, output_filename, status_q
 
             if bitacora_comparison_type == "Weekly":
                  log(f"  Períodos de Bitácora Semanal definidos ({len(bitacora_periods_list)} semanas):")
-            else: 
+            elif bitacora_comparison_type == "Biweekly":
+                 log(f"  Períodos de Bitácora Quincenal definidos ({len(bitacora_periods_list)} quincenas):")
+            else:
                  log(f"  Períodos de Bitácora Mensual definidos ({len(bitacora_periods_list)} meses):")
 
             for _, _, p_label_log in bitacora_periods_list: log(f"    - {p_label_log}")

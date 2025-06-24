@@ -241,8 +241,13 @@ class ReportApp:
         bitacora_type_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 5))
         self.rb_weekly = ttk.Radiobutton(bitacora_type_frame, text="Comparación Semanal", variable=self.bitacora_comparison_type, value="Weekly", command=self._on_bitacora_comparison_change)
         self.rb_weekly.pack(side=tk.LEFT, padx=10)
-        self.lbl_weekly_info = ttk.Label(bitacora_type_frame, text="", foreground="blue") 
+        self.lbl_weekly_info = ttk.Label(bitacora_type_frame, text="", foreground="blue")
         self.lbl_weekly_info.pack(side=tk.LEFT, padx=(0,20))
+
+        self.rb_biweekly = ttk.Radiobutton(bitacora_type_frame, text="Comparación Quincenal", variable=self.bitacora_comparison_type, value="Biweekly", command=self._on_bitacora_comparison_change)
+        self.rb_biweekly.pack(side=tk.LEFT, padx=10)
+        self.lbl_biweekly_info = ttk.Label(bitacora_type_frame, text="", foreground="blue")
+        self.lbl_biweekly_info.pack(side=tk.LEFT, padx=(0,20))
 
         self.rb_monthly = ttk.Radiobutton(bitacora_type_frame, text="Comparación Mensual", variable=self.bitacora_comparison_type, value="Monthly", command=self._on_bitacora_comparison_change)
         self.rb_monthly.pack(side=tk.LEFT, padx=10)
@@ -275,7 +280,7 @@ class ReportApp:
         ttk.Label(weekly_row2_frame, text="O semana detectada (fallback):").pack(side=tk.LEFT, padx=(0,5))
         self.combo_bitacora_monday = ttk.Combobox(weekly_row2_frame, textvariable=self.bitacora_selected_monday_week_var, state='disabled', width=35);
         self.combo_bitacora_monday.pack(side=tk.LEFT, padx=5)
-        self.lbl_bitacora_monday_info = ttk.Label(weekly_row2_frame, text="(Semanas con datos. Auto si no se selecciona por calendario.)")
+        self.lbl_bitacora_monday_info = ttk.Label(weekly_row2_frame, text="(Períodos con datos. Auto si no se selecciona por calendario.)")
         self.lbl_bitacora_monday_info.pack(side=tk.LEFT, padx=5)
 
 
@@ -360,7 +365,8 @@ class ReportApp:
              self._update_campaign_combo_ui([])
 
     def _on_bitacora_comparison_change(self):
-        is_weekly = (self.bitacora_comparison_type.get() == "Weekly")
+        comp = self.bitacora_comparison_type.get()
+        is_weekly = (comp == "Weekly" or comp == "Biweekly")
 
         for widget in self.bitacora_options_container.winfo_children():
             widget.grid_remove()
@@ -717,21 +723,22 @@ class ReportApp:
                         self.bitacora_selected_monday_week_var.set("") # Clear combobox if calendar was used
 
 
-                if self.report_type.get() == "Bitácora" and self.bitacora_comparison_type.get() == "Weekly":
+                if self.report_type.get() == "Bitácora" and self.bitacora_comparison_type.get() in ["Weekly", "Biweekly"]:
                      self.combo_bitacora_monday.configure(state='readonly')
-                     self.lbl_weekly_info.config(text=f"({len(self.detected_mondays_for_bitacora_display)} sem. con datos detectadas)")
+                     label_txt = "sem." if self.bitacora_comparison_type.get() == "Weekly" else "quin." 
+                     self.lbl_weekly_info.config(text=f"({len(self.detected_mondays_for_bitacora_display)} {label_txt} con datos detectadas)")
                 else:
                      self.combo_bitacora_monday.configure(state='disabled')
                      self.lbl_weekly_info.config(text="")
-                self.lbl_bitacora_monday_info.configure(text="(Semanas con datos. Auto si no se selecciona por calendario.)")
+                self.lbl_bitacora_monday_info.configure(text="(Períodos con datos. Auto si no se selecciona por calendario.)")
             else:
                 self.combo_bitacora_monday['values'] = []
                 self.bitacora_selected_monday_week_var.set("")
                 self.combo_bitacora_monday.configure(state='disabled')
-                self.lbl_bitacora_monday_info.configure(text="(No se detectaron semanas con datos para selección.)")
+                self.lbl_bitacora_monday_info.configure(text="(No se detectaron períodos con datos para selección.)")
                 self.lbl_weekly_info.config(text="")
                 if self.input_files:
-                    self._update_status("No se detectaron Lunes adecuados para Bitácora Semanal (se usará lógica automática).")
+                    self._update_status("No se detectaron Lunes adecuados para Bitácora (se usará lógica automática).")
 
     def _update_date_range_display(self):
         min_s=self.min_date_detected.strftime('%d/%m/%Y') if self.min_date_detected else "-"; max_s=self.max_date_detected.strftime('%d/%m/%Y') if self.max_date_detected else "-"
@@ -831,6 +838,11 @@ class ReportApp:
                          self._update_status(f"Bitácora Semanal: Semana de referencia para proceso: {selected_week_start_str} a {selected_week_end_str}.")
                     else:
                          self._update_status("Bitácora Semanal: No se especificó semana válida. Se usará detección automática en backend.")
+                elif bitacora_comp_type == "Biweekly":
+                    if selected_week_start_str and selected_week_end_str:
+                         self._update_status(f"Bitácora Quincenal: Período de referencia para proceso: {selected_week_start_str} a {selected_week_end_str}.")
+                    else:
+                         self._update_status("Bitácora Quincenal: No se especificó período válido. Se usará detección automática en backend.")
                 
                 months_to_compare = self.bitacora_months_to_compare_var.get() if bitacora_comp_type == "Monthly" else 2
                 target_func=procesar_reporte_bitacora_func;
@@ -879,7 +891,7 @@ class ReportApp:
             return
 
         calendar_window = tk.Toplevel(self.root)
-        calendar_window.title("Seleccionar Fecha para Semana de Bitácora")
+        calendar_window.title("Seleccionar Fecha para Período de Bitácora")
         calendar_window.transient(self.root)
         calendar_window.grab_set()
 
@@ -942,13 +954,19 @@ class ReportApp:
                 week_start_date = None
                 week_end_date = None
                 selection_mode = self.calendar_week_selection_mode.get()
+                period_days = 6
+                if self.bitacora_comparison_type.get() == "Biweekly":
+                    period_days = 14
 
                 if selection_mode == "monday":
-                    week_start_date = selected_date_obj - timedelta(days=selected_date_obj.weekday())
-                    week_end_date = week_start_date + timedelta(days=6)
+                    if self.bitacora_comparison_type.get() == "Weekly":
+                        week_start_date = selected_date_obj - timedelta(days=selected_date_obj.weekday())
+                    else:
+                        week_start_date = selected_date_obj
+                    week_end_date = week_start_date + timedelta(days=period_days)
                 elif selection_mode == "end_day":
                     week_end_date = selected_date_obj
-                    week_start_date = week_end_date - timedelta(days=6)
+                    week_start_date = week_end_date - timedelta(days=period_days)
                 
                 if week_start_date is None or week_end_date is None:
                     messagebox.showerror("Error de Modo", "Modo de selección de semana no reconocido.", parent=calendar_window)
@@ -975,7 +993,7 @@ class ReportApp:
                 
                 self.bitacora_selected_week_start_date_var.set(week_start_date.strftime('%d/%m/%Y'))
                 self.bitacora_selected_week_end_date_var.set(week_end_date.strftime('%d/%m/%Y'))
-                self._update_status(f"Semana de referencia para Bitácora actualizada: {week_start_date.strftime('%d/%m/%Y')} a {week_end_date.strftime('%d/%m/%Y')}")
+                self._update_status(f"Período de referencia para Bitácora actualizado: {week_start_date.strftime('%d/%m/%Y')} a {week_end_date.strftime('%d/%m/%Y')}")
                 
                 self.bitacora_selected_monday_week_var.set("") # Deseleccionar combobox
                 
@@ -987,7 +1005,7 @@ class ReportApp:
         calendar_window.wait_window()
 
     def _ask_day_of_week_for_ref_date(self):
-        messagebox.showinfo("Información", "Utiliza el botón 'Seleccionar Semana...' para elegir el período de la Bitácora Semanal.")
+        messagebox.showinfo("Información", "Utiliza el botón 'Seleccionar Semana...' para elegir el período de la Bitácora.")
         return None
 
 # ============================================================
