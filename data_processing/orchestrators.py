@@ -14,7 +14,8 @@ try:
 except ImportError:
     relativedelta = None
     date_parse = None
-    print("ADVERTENCIA (orchestrators.py): python-dateutil no encontrado. Funcionalidad de Bitácora Mensual y algunas comparaciones de fechas podrían fallar.")
+    import logging
+    logging.warning("python-dateutil no encontrado. Funcionalidad de Bitácora Mensual y algunas comparaciones de fechas podrían fallar.")
 
 # Importaciones relativas para módulos dentro del mismo paquete 'data_processing'
 from .loaders import _cargar_y_preparar_datos
