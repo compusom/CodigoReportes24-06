@@ -241,8 +241,13 @@ class ReportApp:
         bitacora_type_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 5))
         self.rb_weekly = ttk.Radiobutton(bitacora_type_frame, text="Comparación Semanal", variable=self.bitacora_comparison_type, value="Weekly", command=self._on_bitacora_comparison_change)
         self.rb_weekly.pack(side=tk.LEFT, padx=10)
-        self.lbl_weekly_info = ttk.Label(bitacora_type_frame, text="", foreground="blue") 
+        self.lbl_weekly_info = ttk.Label(bitacora_type_frame, text="", foreground="blue")
         self.lbl_weekly_info.pack(side=tk.LEFT, padx=(0,20))
+
+        self.rb_biweekly = ttk.Radiobutton(bitacora_type_frame, text="Comparación Quincenal", variable=self.bitacora_comparison_type, value="Biweekly", command=self._on_bitacora_comparison_change)
+        self.rb_biweekly.pack(side=tk.LEFT, padx=10)
+        self.lbl_biweekly_info = ttk.Label(bitacora_type_frame, text="", foreground="blue")
+        self.lbl_biweekly_info.pack(side=tk.LEFT, padx=(0,20))
 
         self.rb_monthly = ttk.Radiobutton(bitacora_type_frame, text="Comparación Mensual", variable=self.bitacora_comparison_type, value="Monthly", command=self._on_bitacora_comparison_change)
         self.rb_monthly.pack(side=tk.LEFT, padx=10)
@@ -275,7 +280,7 @@ class ReportApp:
         ttk.Label(weekly_row2_frame, text="O semana detectada (fallback):").pack(side=tk.LEFT, padx=(0,5))
         self.combo_bitacora_monday = ttk.Combobox(weekly_row2_frame, textvariable=self.bitacora_selected_monday_week_var, state='disabled', width=35);
         self.combo_bitacora_monday.pack(side=tk.LEFT, padx=5)
-        self.lbl_bitacora_monday_info = ttk.Label(weekly_row2_frame, text="(Semanas con datos. Auto si no se selecciona por calendario.)")
+        self.lbl_bitacora_monday_info = ttk.Label(weekly_row2_frame, text="(Períodos con datos. Auto si no se selecciona por calendario.)")
         self.lbl_bitacora_monday_info.pack(side=tk.LEFT, padx=5)
 
 
@@ -325,9 +330,12 @@ class ReportApp:
         available=self.style.theme_names(); preferred=['vista','clam','default']
         for t_theme in preferred:
             if t_theme in available:
-                try: self.style.theme_use(t_theme); print(f"INFO: Tema ttk: '{t_theme}'"); return
+                try:
+                    self.style.theme_use(t_theme)
+                    logging.info("Tema ttk: '%s'", t_theme)
+                    return
                 except tk.TclError: continue
-        print("Adv: No se pudo aplicar tema ttk preferido.")
+        logging.warning("No se pudo aplicar tema ttk preferido.")
 
     def _set_default_filename(self):
         rt = self.report_type.get()
@@ -360,7 +368,8 @@ class ReportApp:
              self._update_campaign_combo_ui([])
 
     def _on_bitacora_comparison_change(self):
-        is_weekly = (self.bitacora_comparison_type.get() == "Weekly")
+        comp = self.bitacora_comparison_type.get()
+        is_weekly = (comp == "Weekly" or comp == "Biweekly")
 
         for widget in self.bitacora_options_container.winfo_children():
             widget.grid_remove()
@@ -411,7 +420,7 @@ class ReportApp:
                 except Exception:
                     pass
             except Exception as e_month_count:
-                print(f"Error contando meses para GUI: {e_month_count}")
+                logging.error("Error contando meses para GUI: %s", e_month_count)
                 self.lbl_monthly_info.config(text="(No se pudo determinar el número de meses)")
         else:
              self.lbl_monthly_info.config(text="")
@@ -625,8 +634,8 @@ class ReportApp:
                              except Exception as e_read_csv:
                                  logging.exception("Peek read_csv failed", exc_info=e_read_csv)
 
-                    except Exception as e_peek: 
-                         print(f"Adv: Error reading peek data for entities in {os.path.basename(f_path)}: {e_peek}")
+                    except Exception as e_peek:
+                         logging.warning("Error reading peek data for entities in %s: %s", os.path.basename(f_path), e_peek)
 
                     if df_temp_peek is not None and not df_temp_peek.empty: 
                         file_cols_normalized = {c: normalize(c) for c in df_temp_peek.columns} 
@@ -648,11 +657,11 @@ class ReportApp:
                             for camp, adset in temp_df.drop_duplicates().itertuples(index=False): 
                                 all_campaign_adsets.add((camp, adset))
                         elif camp_col_orig:
-                             print(f"Adv: Columna Campaign '{camp_col_orig}' encontrada, pero AdSet no en '{os.path.basename(f_path)}' para detección de entidades.")
+                             logging.warning("Columna Campaign '%s' encontrada, pero AdSet no en '%s' para detección de entidades.", camp_col_orig, os.path.basename(f_path))
                         elif adset_col_orig:
-                             print(f"Adv: Columna AdSet '{adset_col_orig}' encontrada, pero Campaign no en '{os.path.basename(f_path)}' para detección de entidades.")
+                             logging.warning("Columna AdSet '%s' encontrada, pero Campaign no en '%s' para detección de entidades.", adset_col_orig, os.path.basename(f_path))
                         else:
-                             print(f"Adv: No se encontraron columnas Campaign/AdSet en '{os.path.basename(f_path)}' para detección de entidades.")
+                             logging.warning("No se encontraron columnas Campaign/AdSet en '%s' para detección de entidades.", os.path.basename(f_path))
             except NameError as ne_date:
                  self.status_queue.put(f"Error Fatal Interno: Función '{ne_date.name}' no encontrada.");
                  self.root.after(0,self._update_dates_mondays_and_entities_ui,None,None,0,[],[],[]) 
@@ -717,21 +726,22 @@ class ReportApp:
                         self.bitacora_selected_monday_week_var.set("") # Clear combobox if calendar was used
 
 
-                if self.report_type.get() == "Bitácora" and self.bitacora_comparison_type.get() == "Weekly":
+                if self.report_type.get() == "Bitácora" and self.bitacora_comparison_type.get() in ["Weekly", "Biweekly"]:
                      self.combo_bitacora_monday.configure(state='readonly')
-                     self.lbl_weekly_info.config(text=f"({len(self.detected_mondays_for_bitacora_display)} sem. con datos detectadas)")
+                     label_txt = "sem." if self.bitacora_comparison_type.get() == "Weekly" else "quin." 
+                     self.lbl_weekly_info.config(text=f"({len(self.detected_mondays_for_bitacora_display)} {label_txt} con datos detectadas)")
                 else:
                      self.combo_bitacora_monday.configure(state='disabled')
                      self.lbl_weekly_info.config(text="")
-                self.lbl_bitacora_monday_info.configure(text="(Semanas con datos. Auto si no se selecciona por calendario.)")
+                self.lbl_bitacora_monday_info.configure(text="(Períodos con datos. Auto si no se selecciona por calendario.)")
             else:
                 self.combo_bitacora_monday['values'] = []
                 self.bitacora_selected_monday_week_var.set("")
                 self.combo_bitacora_monday.configure(state='disabled')
-                self.lbl_bitacora_monday_info.configure(text="(No se detectaron semanas con datos para selección.)")
+                self.lbl_bitacora_monday_info.configure(text="(No se detectaron períodos con datos para selección.)")
                 self.lbl_weekly_info.config(text="")
                 if self.input_files:
-                    self._update_status("No se detectaron Lunes adecuados para Bitácora Semanal (se usará lógica automática).")
+                    self._update_status("No se detectaron Lunes adecuados para Bitácora (se usará lógica automática).")
 
     def _update_date_range_display(self):
         min_s=self.min_date_detected.strftime('%d/%m/%Y') if self.min_date_detected else "-"; max_s=self.max_date_detected.strftime('%d/%m/%Y') if self.max_date_detected else "-"
@@ -760,8 +770,10 @@ class ReportApp:
         try:
             while True:
                 self._handle_queue_message(self.status_queue.get_nowait())
-        except queue.Empty: pass
-        except Exception as e: print(f"Error checking queue: {e}")
+        except queue.Empty:
+            pass
+        except Exception as e:
+            logging.error("Error checking queue: %s", e)
         finally:
             if hasattr(self,'root') and self.root and self.root.winfo_exists():
                  self.root.after(100, self.check_queue)
@@ -775,7 +787,7 @@ class ReportApp:
         global procesar_reporte_rendimiento_func, procesar_reporte_bitacora_func 
         
         if procesar_reporte_rendimiento_func is None or procesar_reporte_bitacora_func is None:
-            print("FATAL: Funciones de procesamiento no se importaron correctamente al inicio (start_processing_thread).")
+            logging.critical("Funciones de procesamiento no se importaron correctamente al inicio (start_processing_thread).")
             messagebox.showerror("Error Crítico", "Funciones de procesamiento no cargadas. Revise consola.")
             self._update_status("ERROR CRÍTICO: Fallo en importación inicial (detectado en start_processing_thread).")
             return
@@ -831,6 +843,11 @@ class ReportApp:
                          self._update_status(f"Bitácora Semanal: Semana de referencia para proceso: {selected_week_start_str} a {selected_week_end_str}.")
                     else:
                          self._update_status("Bitácora Semanal: No se especificó semana válida. Se usará detección automática en backend.")
+                elif bitacora_comp_type == "Biweekly":
+                    if selected_week_start_str and selected_week_end_str:
+                         self._update_status(f"Bitácora Quincenal: Período de referencia para proceso: {selected_week_start_str} a {selected_week_end_str}.")
+                    else:
+                         self._update_status("Bitácora Quincenal: No se especificó período válido. Se usará detección automática en backend.")
                 
                 months_to_compare = self.bitacora_months_to_compare_var.get() if bitacora_comp_type == "Monthly" else 2
                 target_func=procesar_reporte_bitacora_func;
@@ -879,7 +896,7 @@ class ReportApp:
             return
 
         calendar_window = tk.Toplevel(self.root)
-        calendar_window.title("Seleccionar Fecha para Semana de Bitácora")
+        calendar_window.title("Seleccionar Fecha para Período de Bitácora")
         calendar_window.transient(self.root)
         calendar_window.grab_set()
 
@@ -916,10 +933,12 @@ class ReportApp:
                        ) 
         if current_selection_date:
             try: cal.selection_set(current_selection_date)
-            except Exception as e_cal_select_set: print(f"Advertencia: No se pudo preseleccionar fecha en calendario: {e_cal_select_set}")
+            except Exception as e_cal_select_set:
+                logging.warning("No se pudo preseleccionar fecha en calendario: %s", e_cal_select_set)
 
         try: cal.config(firstweekday='monday')
-        except tk.TclError: print("Advertencia: No se pudo configurar 'firstweekday' en tkcalendar. Usando default.")
+        except tk.TclError:
+            logging.warning("No se pudo configurar 'firstweekday' en tkcalendar. Usando default.")
 
         if self.min_date_detected: cal.config(mindate=self.min_date_detected.date())
         if self.max_date_detected: cal.config(maxdate=self.max_date_detected.date())
@@ -942,13 +961,19 @@ class ReportApp:
                 week_start_date = None
                 week_end_date = None
                 selection_mode = self.calendar_week_selection_mode.get()
+                period_days = 6
+                if self.bitacora_comparison_type.get() == "Biweekly":
+                    period_days = 14
 
                 if selection_mode == "monday":
-                    week_start_date = selected_date_obj - timedelta(days=selected_date_obj.weekday())
-                    week_end_date = week_start_date + timedelta(days=6)
+                    if self.bitacora_comparison_type.get() == "Weekly":
+                        week_start_date = selected_date_obj - timedelta(days=selected_date_obj.weekday())
+                    else:
+                        week_start_date = selected_date_obj
+                    week_end_date = week_start_date + timedelta(days=period_days)
                 elif selection_mode == "end_day":
                     week_end_date = selected_date_obj
-                    week_start_date = week_end_date - timedelta(days=6)
+                    week_start_date = week_end_date - timedelta(days=period_days)
                 
                 if week_start_date is None or week_end_date is None:
                     messagebox.showerror("Error de Modo", "Modo de selección de semana no reconocido.", parent=calendar_window)
@@ -975,7 +1000,7 @@ class ReportApp:
                 
                 self.bitacora_selected_week_start_date_var.set(week_start_date.strftime('%d/%m/%Y'))
                 self.bitacora_selected_week_end_date_var.set(week_end_date.strftime('%d/%m/%Y'))
-                self._update_status(f"Semana de referencia para Bitácora actualizada: {week_start_date.strftime('%d/%m/%Y')} a {week_end_date.strftime('%d/%m/%Y')}")
+                self._update_status(f"Período de referencia para Bitácora actualizado: {week_start_date.strftime('%d/%m/%Y')} a {week_end_date.strftime('%d/%m/%Y')}")
                 
                 self.bitacora_selected_monday_week_var.set("") # Deseleccionar combobox
                 
@@ -987,14 +1012,14 @@ class ReportApp:
         calendar_window.wait_window()
 
     def _ask_day_of_week_for_ref_date(self):
-        messagebox.showinfo("Información", "Utiliza el botón 'Seleccionar Semana...' para elegir el período de la Bitácora Semanal.")
+        messagebox.showinfo("Información", "Utiliza el botón 'Seleccionar Semana...' para elegir el período de la Bitácora.")
         return None
 
 # ============================================================
 # PUNTO DE ENTRADA PRINCIPAL
 # ============================================================
 if __name__ == "__main__":
-    print(f"DEBUG: __main__ block - os.getcwd(): {os.getcwd()}")
+    logging.debug("__main__ block - os.getcwd(): %s", os.getcwd())
     try:
         if 'tk' not in globals(): raise NameError("'tk' no definido.")
         if relativedelta is None or date_parse is None:
@@ -1002,14 +1027,18 @@ if __name__ == "__main__":
                  _warn_root = tk.Tk(); _warn_root.withdraw()
                  messagebox.showwarning("Dependencia Faltante", "¡Advertencia! Falta 'python-dateutil'.\n\nInstala con: pip install python-dateutil\n\nSin esta librería, las funciones de comparación mensual y la Bitácora Semanal podrían no funcionar correctamente.")
                  _warn_root.destroy()
-             except Exception as e_warn:
-                 print("\nADVERTENCIA CRÍTICA: 'python-dateutil' no instalado o falló importación. Funciones de periodo (Bitácora, comp. mensual) podrían fallar.")
-                 print(f"(Error al mostrar advertencia GUI: {e_warn})")
+            except Exception as e_warn:
+                 logging.critical("'python-dateutil' no instalado o falló importación. Funciones de periodo (Bitácora, comp. mensual) podrían fallar.")
+                 logging.critical("(Error al mostrar advertencia GUI: %s)", e_warn)
 
         root = tk.Tk(); app = ReportApp(root)
         root.update_idletasks()
         w_val=root.winfo_width();h_val=root.winfo_height();sw_val=root.winfo_screenwidth();sh_val=root.winfo_screenheight()
         cx_val=int(sw_val/2-w_val/2);cy_val=int(sh_val/2-h_val/2); root.geometry(f'{w_val}x{h_val}+{cx_val}+{cy_val}')
         root.mainloop()
-    except NameError as e_name: print(f"ERROR FATAL NameError: {e_name}"); traceback.print_exc()
-    except Exception as e_gui: print(f"ERROR FATAL GUI: {e_gui}"); traceback.print_exc()
+    except NameError as e_name:
+        logging.critical("ERROR FATAL NameError: %s", e_name)
+        traceback.print_exc()
+    except Exception as e_gui:
+        logging.critical("ERROR FATAL GUI: %s", e_gui)
+        traceback.print_exc()
